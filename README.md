@@ -8,7 +8,8 @@
 ![Domain](https://img.shields.io/badge/Domain-Financial%20AI-critical)
 
 ## 🏆 **Koscom AI Agent Challenge 2025 대상 수상작**  
-원화 스테이블코인 발행사의 리스크 관리 자동화를 목적으로 개발된 AI Agent 시스템입니다.https://www.koscom.co.kr/portal/bbs/B0000064/view.do?nttId=30321&searchCnd=&searchWrd=&gubun=&delcode=0&searchBgnDe=&searchEndDe=&useAt=&replyAt=&menuNo=200629&sdate=&edate=&deptId=&isk=&ise=&viewType=&type=&year=&pageIndex=2
+원화 스테이블코인 발행사의 리스크 관리 자동화를 목적으로 개발된 AI Agent 시스템입니다.
+링크 : https://www.koscom.co.kr/portal/bbs/B0000064/view.do?nttId=30321&searchCnd=&searchWrd=&gubun=&delcode=0&searchBgnDe=&searchEndDe=&useAt=&replyAt=&menuNo=200629&sdate=&edate=&deptId=&isk=&ise=&viewType=&type=&year=&pageIndex=2
 
 # 🪙 K-WON — 원화 스테이블코인 리스크 관리 AI Agent
 
