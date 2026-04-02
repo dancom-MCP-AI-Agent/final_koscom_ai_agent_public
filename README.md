@@ -7,12 +7,12 @@
 ![Status](https://img.shields.io/badge/Project-Academic%20Research-success)
 ![Domain](https://img.shields.io/badge/Domain-Financial%20AI-critical)
 
-🏆 **Koscom AI Agent Challenge 2025 대상 수상작**  
+## 🏆 **Koscom AI Agent Challenge 2025 대상 수상작**  
 원화 스테이블코인 발행사의 리스크 관리 자동화를 목적으로 개발된 AI Agent 시스템입니다.
 
 # 🪙 K-WON — 원화 스테이블코인 리스크 관리 AI Agent
 
-🏆 **Grand Prize Winner — Koscom AI Agent Challenge 2025**
+
 
 > Team DANCOM | 권민석 · 김도연 · 양서윤 · 이도원
 
