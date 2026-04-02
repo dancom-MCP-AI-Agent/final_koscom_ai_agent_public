@@ -1,0 +1,12 @@
+cat > .gitignore <<'EOF'
+.env
+*.env
+.env.*
+*.log
+*.db
+__pycache__/
+*.pyc
+claude_desktop_config.json
+.venv/
+venv/
+EOF

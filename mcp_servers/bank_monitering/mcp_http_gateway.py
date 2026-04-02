@@ -1,0 +1,257 @@
+"""
+bank_monitoring MCP HTTP Gateway
+FastMCP 대신 표준 HTTP 엔드포인트로 MCP 툴 제공
+"""
+
+from flask import Flask, request, jsonify
+import asyncio
+import threading
+import traceback
+from app_mcp.tools.compute_fss import compute_fss_for_bank, get_latest_fss
+from core.db import init_schema
+
+# =====================================================
+# 글로벌 Event Loop (asyncpg, MCP 툴 공용)
+# =====================================================
+
+GLOBAL_LOOP = asyncio.new_event_loop()
+
+def _run_global_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+_loop_thread = threading.Thread(target=_run_global_loop, args=(GLOBAL_LOOP,), daemon=True)
+_loop_thread.start()
+
+
+def run_async(func, *args, **kwargs):
+    """
+    async function을 GLOBAL_LOOP에서 실행.
+    func 자체를 넘겨야 하고, coroutine 넘기면 안됨!!
+    """
+    if asyncio.iscoroutinefunction(func):
+        coro = func(*args, **kwargs)
+        future = asyncio.run_coroutine_threadsafe(coro, GLOBAL_LOOP)
+        return future.result()
+    else:
+        return func(*args, **kwargs)
+
+
+
+# =====================================================
+# 기존 MCP Tools Import
+# =====================================================
+
+from app_mcp.tools.bank_name_normalizer import normalize_name
+
+from app_mcp.tools.bank_risk import (
+    get_bank_risk_score,
+    run_bank_stress_test,
+    suggest_bank_rebalance,
+)
+
+from app_mcp.tools.dart_financials import (
+    bank_financials_by_name,
+    dart_financials_summary,
+)
+
+from app_mcp.tools.credit import calc_bank_ratios
+
+from app_mcp.tools.disclosures import (
+    resolve_corp_code,
+    corp_codes_search,
+)
+
+from app_mcp.tools.policy_check import (
+    check_policy_compliance,
+    get_rebalancing_suggestions,
+)
+
+from app_mcp.tools.reserve_role_engine import (
+    Institution,
+    compute_target_allocation,
+    compute_rebalance_plan,
+)
+
+
+
+# =====================================================
+# 역할 기반 Wrapper
+# =====================================================
+
+async def role_based_allocation_http(params):
+    raw_insts = params.get("institutions", [])
+    insts = []
+
+    fss_map = {}
+
+    for i in raw_insts:
+        bank_id = i.get("bank_id")
+        fss = i.get("fss", None)
+        if fss is not None:
+            fss_map[bank_id] = fss
+
+        insts.append(Institution(
+            bank_id=bank_id,
+            name=i.get("name"),
+            exposure=i.get("exposure"),
+            role=i.get("role")
+        ))
+
+    total = sum(i.exposure for i in insts)
+
+    result = compute_target_allocation(insts, total)
+
+    banks_out = []
+    for b in result["banks"]:
+        data = b.model_dump()
+        bank_id = data.get("bank_id")
+        if bank_id in fss_map:
+            data["fss"] = fss_map[bank_id]
+        banks_out.append(data)
+
+    return {
+        "banks": banks_out,
+        "custody": result["custody"]
+    }
+
+
+async def role_based_rebalance_http(params):
+
+    def safe_dump(item):
+        if hasattr(item, "model_dump"):
+            return item.model_dump()
+        if isinstance(item, dict):
+            return item
+        return {"value": str(item)}
+
+    insts = [Institution(**i) for i in params.get("institutions", [])]
+    total = sum(i.exposure for i in insts)
+
+    targets = compute_target_allocation(insts, total)
+    plan = compute_rebalance_plan(insts, targets)
+
+    return {
+        "targets": [safe_dump(t) for t in targets],
+        "rebalance_plan": [safe_dump(p) for p in plan],
+    }
+
+
+
+# =====================================================
+# TOOL MAP (모두 run_async(func, ...) 로 수정 완료)
+# =====================================================
+
+TOOL_MAP = {
+
+    "normalize_bank_name": lambda params: {
+        "input": params.get("bank_name"),
+        "normalized": normalize_name(params.get("bank_name", "")),
+    },
+
+    "get_bank_risk_score": lambda params: run_async(get_bank_risk_score, **params),
+
+    "run_bank_stress_test": lambda params: run_async(
+        run_bank_stress_test,
+        exposures=params.get("exposures", []),
+        scenario=params.get("scenario", {
+            "bank_liquidity_shock": {},
+            "daily_runoff_rate": 0.10,
+            "interest_shock_bps": 0.0
+        })
+    ),
+
+    "suggest_bank_rebalance": lambda params: run_async(suggest_bank_rebalance, **params),
+
+    # DART
+    "bank_financials_by_name": lambda params: run_async(bank_financials_by_name, **params),
+    "dart_financials_summary": lambda params: run_async(dart_financials_summary, **params),
+    "calc_bank_ratios": lambda params: run_async(calc_bank_ratios, **params),
+
+    # 공시
+    "resolve_corp_code": lambda params: run_async(resolve_corp_code, **params),
+    "corp_codes_search": lambda params: run_async(corp_codes_search, **params),
+
+    # 정책 점검
+    "check_policy_compliance": lambda params: run_async(check_policy_compliance, **params),
+    "get_rebalancing_suggestions": lambda params: run_async(get_rebalancing_suggestions, **params),
+
+    # 역할 기반 엔진
+    "role_based_allocation": lambda params: run_async(role_based_allocation_http, params),
+    "role_based_rebalance": lambda params: run_async(role_based_rebalance_http, params),
+
+    # FSS
+    "compute_fss_for_bank": lambda params: run_async(compute_fss_for_bank, params),
+    "get_latest_fss": lambda params: run_async(get_latest_fss, {"bank_id": params.get("bank_id")}),
+}
+
+
+
+# =====================================================
+# HTTP Router
+# =====================================================
+
+app = Flask(__name__)
+
+
+@app.route("/mcp", methods=["POST"])
+def mcp_gateway():
+    try:
+        data = request.json
+        tool_name = data.get("tool")
+        params = data.get("params", {}) or {}
+
+        print(f"🔧 MCP 호출: {tool_name}({params})")
+
+        if tool_name not in TOOL_MAP:
+            return jsonify({
+                "success": False,
+                "error": f"Unknown tool: {tool_name}",
+            }), 404
+
+        result = TOOL_MAP[tool_name](params)
+
+        print(f"✅ 툴 실행 성공: {tool_name}")
+
+        return jsonify({
+            "success": True,
+            "result": result,
+        })
+
+    except Exception as e:
+        print(f"❌ MCP Gateway 에러: {e}")
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }), 500
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "tools": list(TOOL_MAP.keys())
+    })
+
+
+
+# =====================================================
+# MAIN
+# =====================================================
+
+if __name__ == "__main__":
+    # init_schema도 coroutine → run_async(func)
+    run_async(init_schema)
+
+    print("=" * 70)
+    print("🚀 Bank Monitoring MCP HTTP Gateway")
+    print("=" * 70)
+    print("📍 Endpoint: http://localhost:5300/mcp")
+    print("🛠 Available Tools:")
+    for tool in TOOL_MAP.keys():
+        print(f" - {tool}")
+    print("=" * 70)
+
+    app.run(host="0.0.0.0", port=5300, debug=True)
