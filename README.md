@@ -1,5 +1,12 @@
 # 🏦 KOSCOM AI Agent Platform
 
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-Framework-009688?logo=fastapi)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker)
+![MCP](https://img.shields.io/badge/Architecture-MCP%20Multi--Agent-orange)
+![Status](https://img.shields.io/badge/Project-Academic%20Research-success)
+![Domain](https://img.shields.io/badge/Domain-Financial%20AI-critical)
+
 MCP (Model Context Protocol) 기반 금융 데이터 분석 및 감사 자동화를 위한  
 멀티 에이전트 AI 플랫폼입니다.
 
